@@ -1,0 +1,106 @@
+#x-extra-vars: &extra-vars
+#  POSTGRES_DB: gis
+
+services:
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    profiles:
+      - martin
+    volumes:
+      - ${VOLUME_DIR:-.}/nginx/nginx.conf:/etc/nginx/nginx.conf
+    #      - ${VOLUME_DIR:-.}/volumes/nginx/certs:/etc/nginx/certs
+    restart: on-failure
+    depends_on:
+      martin:
+        condition: service_healthy
+
+
+  postgis:
+    image: postgis/postgis:latest
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      - POSTGRES_DB
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+    volumes:
+      - ${VOLUME_DIR:-.}/volumes/postgres/data:/var/lib/postgresql/data
+    #      - ${VOLUME_DIR:-.}/initdb/:/docker-entrypoint-initdb.d/
+    ports:
+      - "5432:5432"
+
+
+  tegola:
+    image: gospatial/tegola:v0.20.0
+    restart: on-failure
+    profiles:
+      - tegola
+    environment:
+      - VERSION=latest
+      - POSTGRES_DB
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+    volumes:
+      - ${VOLUME_DIR:-.}/tegola/config.toml/:/opt/config.toml
+    ports:
+      - "8080:8080"
+    command: [ "server" ]
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "--quiet", "http://localhost:8080/" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      postgis:
+        condition: service_healthy
+
+  martin:
+    image: ghcr.io/maplibre/martin:main
+    restart: on-failure
+    profiles:
+      - martin
+#    volumes:
+#      - ${VOLUME_DIR:-.}/martin/config.yaml:/opt/config.yaml
+    healthcheck:
+      test: [ "CMD", "wget", "--spider","--quiet",  "http://localhost:3000/health" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}
+    command: ["--webui","enable-for-all"]
+    depends_on:
+      postgis:
+        condition: service_healthy
+
+
+  pgtileserv:
+      image: pramsey/pg_tileserv:latest-amd64
+      restart: on-failure
+      profiles:
+        - pgtileserv
+      volumes:
+        - ${VOLUME_DIR:-.}/pgtileserv/config.yaml:/config.yaml
+      environment:
+        - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis/${POSTGRES_DB}
+      ports:
+        - "7800:7800"
+#      healthcheck:
+#        test: [ "CMD", "wget", "--spider", "--quiet", "http://localhost:7800/health" ]
+#        interval: 30s
+#        timeout: 5s
+#        retries: 5
+#        start_period: 10s
+      depends_on:
+        postgis:
+          condition: service_healthy

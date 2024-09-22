@@ -1,0 +1,31 @@
+#[webserver]
+#port = ":8080"
+
+[webserver.headers]
+Cache-Control = "s-maxage=3600"
+#
+[cache]
+type="file"
+basepath="/tmp/tegola-cache"
+
+[[providers]]
+name = "pg"
+type = "mvt_postgis"
+uri = "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgis:5432/${POSTGRES_DB}?sslmode=disable" # PostGIS connection string (required)
+srid = 4326
+
+[[providers.layers]]
+name = "mapview"
+geometry_fieldname = "geom"
+geometry_type="point"
+id_fieldname = "id"
+sql = "SELECT ST_AsMVTGeom(geom, !BBOX!) AS geom, name,id FROM miner_info WHERE geom && !BBOX!"
+
+[[maps]]
+name = "miner_info"
+center = [7.0982, 50.7374, 11.0] # set the center of the map so the user is auto navigated to Bonn
+
+[[maps.layers]]
+provider_layer = "pg.mapview"
+min_zoom = 0
+max_zoom = 22
