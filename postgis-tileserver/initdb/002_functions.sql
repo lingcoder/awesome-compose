@@ -45,6 +45,7 @@ BEGIN
         END LOOP;
 END;
 $function$
+;
 
 
 -- tilehexagons function
@@ -73,7 +74,7 @@ $function$
 ;
 
 -- h3 function
-CREATE OR REPLACE FUNCTION public.mvpview_h3(z integer, x integer, y integer, step integer DEFAULT 4)
+CREATE OR REPLACE FUNCTION public.mapview_h3(z integer, x integer, y integer, step integer DEFAULT 4)
     RETURNS bytea
     LANGUAGE sql
     STABLE PARALLEL SAFE STRICT
@@ -108,5 +109,46 @@ $function$
 ;
 
 
+CREATE OR REPLACE function public.miner_h3(z integer, x integer, y integer, query_params json DEFAULT '{"step": 4}'::json) returns bytea
+    stable
+    strict
+    parallel safe
+    language sql
+as
+$function$
+WITH
+    bounds AS (
+        -- Convert tile coordinates to web mercator tile bounds
+        SELECT ST_TileEnvelope(z, x, y) AS geom
+    ),
+    datas AS (
+        -- Summary of populated places grouped by hex
+        SELECT Count(id) AS num,h.i, h.j, h.geom
+        -- All the hexes that interact with this tile
+        FROM TileHexagons(z, x, y, (query_params->>'step')::int) h
+                 -- All the populated places
+                 JOIN miner_info n
+            -- Transform the hex into the SRS (4326 in this case)
+            -- of the table of interest
+                      ON ST_Intersects(n.geom, ST_Transform(h.geom, 4326))
+        GROUP BY h.i, h.j, h.geom
+    ),
+    mvt AS (
+        -- Usual tile processing, ST_AsMVTGeom simplifies, quantizes,
+        -- and clips to tile boundary
+        SELECT ST_AsMVTGeom(datas.geom, bounds.geom) AS geom,
+               datas.i, datas.j,datas.num
+        FROM datas, bounds
+    )
+
+SELECT ST_AsMVT(mvt, 'default') FROM mvt
+$function$;
+
+
+--
 CREATE EXTENSION h3;
 CREATE EXTENSION h3_postgis CASCADE;
+
+
+CREATE INDEX idx_miner_info_geom
+    ON miner_info USING GIST (geom);
