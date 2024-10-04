@@ -1,3 +1,55 @@
+
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+
+CREATE EXTENSION IF NOT EXISTS h3;
+
+
+CREATE EXTENSION IF NOT EXISTS h3_postgis CASCADE;
+
+
+
+-- auto-generated definition
+create table if not exists miner_info
+(
+    id         integer,
+    name       varchar(100),
+    longitude  double precision,
+    latitude   double precision,
+    created_at timestamptz(6)
+);
+
+
+ALTER TABLE miner_info ADD COLUMN IF NOT EXISTS geom geometry(Point, 4326);
+
+
+CREATE INDEX IF NOT EXISTS idx_miner_info_geom ON miner_info USING GIST (geom);
+
+
+CREATE OR REPLACE FUNCTION update_geom_if_valid()
+    RETURNS TRIGGER AS $$
+BEGIN
+    -- 仅在latitude和longitude均大于0时更新geom字段
+    IF NEW.latitude > 0 AND NEW.longitude > 0 THEN
+        NEW.geom := ST_SetSRID(ST_MakePoint(NEW.longitude, NEW.latitude), 4326);
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE TRIGGER update_geom_trigger
+    BEFORE INSERT OR UPDATE ON miner_info
+    FOR EACH ROW
+EXECUTE FUNCTION update_geom_if_valid();
+
+
+UPDATE miner_info
+SET geom = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
+WHERE latitude > 0 AND longitude > 0;
+
+
+
 CREATE OR REPLACE FUNCTION public.wifi_h3(z integer, x integer, y integer, query_params json DEFAULT '{"step": 4}'::json)
     RETURNS bytea
     STABLE
@@ -44,20 +96,6 @@ SELECT ST_AsMVT(mvt, 'default') FROM mvt
 $function$;
 
 
---
-CREATE EXTENSION h3;
-CREATE EXTENSION h3_postgis CASCADE;
 
--- auto-generated definition
-create table miner_info
-(
-    id         integer,
-    name       text,
-    geom       geometry(Point, 4326),
-    longitude  double precision,
-    latitude   text,
-    created_at text
-);
 
-CREATE INDEX idx_miner_info_geom
-    ON miner_info USING GIST (geom);
+
