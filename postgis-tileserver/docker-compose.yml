@@ -28,7 +28,7 @@ services:
       - POSTGRES_PASSWORD
     volumes:
       - ${VOLUME_DIR:-.}/volumes/postgres/data:/var/lib/postgresql/data
-      - ${VOLUME_DIR:-.}/initdb/:/docker-entrypoint-initdb.d/
+      - ./initdb/:/docker-entrypoint-initdb.d/
     ports:
       - "5432:5432"
 

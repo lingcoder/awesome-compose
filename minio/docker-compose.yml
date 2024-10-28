@@ -1,0 +1,37 @@
+services:
+  minio:
+    image: minio/minio:latest
+    environment:
+      - TZ
+      - MINIO_ACCESS_KEY
+      - MINIO_SECRET_KEY
+    volumes:
+      - ${VOLUME_DIR:-.}/volumes/minio:/minio_data
+    command: [ "minio", "server", "/minio_data", "--console-address",":9001" ]
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    restart: on-failure
+
+  mc:
+    image: minio/mc:latest
+    entrypoint: [ "/bin/sh", "-c" ]
+    environment:
+      - MINIO_ACCESS_KEY
+      - MINIO_SECRET_KEY
+      - MINIO_BUCKET_NAME
+    # Create a new bucket and configure public read permissions
+    command:
+      - |
+        mc alias set minio http://minio:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY
+        if ! mc ls minio/$MINIO_BUCKET_NAME > /dev/null 2>&1; then
+            mc mb minio/$MINIO_BUCKET_NAME
+        else
+            echo "Bucket '$MINIO_BUCKET_NAME' already exists. Skipping creation."
+        fi
+        mc anonymous set public minio/$MINIO_BUCKET_NAME/static
